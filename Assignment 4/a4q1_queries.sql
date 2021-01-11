@@ -1,0 +1,26 @@
+-- CSC 370 - Summer 2020
+-- Assignment 4: Queries for Question 1 (imdb)
+-- Name: Elizabeth Vellethara
+-- Student ID: V00883616
+
+-- Place your query for each sub-question in the appropriate position
+-- below. Do not modify or remove the '-- Question 1x --' header before
+-- each question.
+
+
+-- Question 1a --
+with 
+	movie_years as (
+		select title_id, year from titles where title_type = 'movie' and year >= 2000 and year <= 2017),
+	movie_only_with_atleast_10000_votes as (
+		select * from movie_years natural join ratings where votes>=10000),
+	each_years_highest_rating as (
+		select name , year, rating, max(rating) over(partition by year), votes from movie_only_with_atleast_10000_votes natural join title_names where is_primary = true)
+select name as primary_name, year, rating, votes from each_years_highest_rating where rating=max;
+-- Question 1b --
+with
+	series_names as (
+		select title_id, name as primary_name from title_names natural join titles where is_primary = true and title_type = 'tvSeries'),
+	series_episode_counts as (
+		select * from (select series_id as title_id, count(*) over(partition by series_id) as episode_count from series_episodes) as T1 where episode_count>6000)
+select distinct primary_name, episode_count from series_episode_counts natural left outer join series_names order by episode_count desc;

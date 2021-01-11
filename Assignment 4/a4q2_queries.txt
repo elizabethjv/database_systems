@@ -1,0 +1,62 @@
+-- CSC 370 - Summer 2020
+-- Assignment 4: Queries for Question 2 (ferries)
+-- Name: Elizabeth Vellethara
+-- Student ID: V00883616
+
+-- Place your query for each sub-question in the appropriate position
+-- below. Do not modify or remove the '-- Question 2x --' header before
+-- each question.
+
+
+-- Question 2a --
+with 
+	pairs as (
+		select S1.route_number as route_number, S1.vessel_name as vessel1, S2.vessel_name as vessel2 from sailings as S1 inner join sailings as S2 on S1.route_number=S2.route_number and S1.scheduled_departure=S2.scheduled_departure and S1.vessel_name<S2.vessel_name and (S1.source_port=S2.source_port or S1.source_port=S2.destination_port ))
+select vessel1, vessel2, count(*) as num_pairings from pairs group by vessel1, vessel2 order by num_pairings desc;
+-- Question 2b --
+with
+	average_durations as (
+		select route_number, avg((extract(epoch from arrival)-extract(epoch from scheduled_departure))/60) as avg_duration from sailings group by route_number)
+select route_number, nominal_duration, avg_duration from routes natural join average_durations order by route_number;
+-- Question 2c --
+with 
+	dept_arr as (
+		select route_number, scheduled_departure,(extract(epoch from arrival)-extract(epoch from scheduled_departure))/60 as duration from sailings where route_number = 1), 
+	late_sailings as (
+		select scheduled_departure, route_number from dept_arr natural join routes where duration-nominal_duration>=5),
+	only_ontime_sailings as (
+		select scheduled_departure, route_number from dept_arr except select * from late_sailings),
+	final_dates as (
+		select extract(year from scheduled_departure) as year, extract(month from scheduled_departure) as month, extract(day from scheduled_departure) as day from only_ontime_sailings)		
+select month, sum(num) as count from (select year, month, count(distinct day) as num from final_dates group by month, year order by month) as T1 group by month;
+-- Question 2d --
+with 
+	total_sailings as (
+		select vessel_name, count(*) as total_sailings from sailings group by vessel_name order by vessel_name),
+	dept_arr as (
+		select route_number, vessel_name, (extract(epoch from arrival)-extract(epoch from scheduled_departure))/60 as duration from sailings), 
+	late_sailings as (
+		select route_number, vessel_name from dept_arr natural join routes where duration-nominal_duration>=5),
+ 	final_with_null as (
+		select vessel_name, total_sailings, late_sailings, late_sailings/total_sailings::float as late_fraction from (select vessel_name, total_sailings from total_sailings) as T2 natural left outer join (select vessel_name, count(route_number) as late_sailings from late_sailings group by vessel_name) as T1 order by vessel_name),
+	null_rows_convert as (
+		select vessel_name, total_sailings, 0 as late_sailings, 0 as late_fraction from final_with_null where late_sailings is null)
+select * from (select * from final_with_null where late_sailings is not null union select * from null_rows_convert) as T1 order by vessel_name;
+
+-- Question 2e --
+with
+	sailings_with_delays as (
+		select route_number, vessel_name, scheduled_departure, arrival from sailings where (extract(epoch from actual_departure)-extract(epoch from scheduled_departure))/60>=15),
+	dept_arr as (
+		select route_number, vessel_name, (extract(epoch from arrival)-extract(epoch from scheduled_departure))/60 as duration from sailings_with_delays where extract(year from scheduled_departure) = extract(year from arrival) and extract(month from scheduled_departure) = extract(month from arrival) and extract(day from scheduled_departure) = extract(day from arrival)),
+	ontime_sailings as (
+		select vessel_name, route_number from dept_arr natural join routes where duration-nominal_duration<=5)
+select vessel_name, count(route_number) as made_up_sailings from ontime_sailings group by vessel_name order by vessel_name;
+-- Question 2f --
+with 
+	dept_arr as (
+		select route_number, scheduled_departure, (extract(epoch from arrival)-extract(epoch from scheduled_departure))/60 as duration from sailings),
+	ontime_sailings as (
+		select distinct scheduled_departure::date, route_number from dept_arr natural join routes where duration-nominal_duration<5 order by route_number, scheduled_departure)
+select route_number, count(scheduled_departure) as max_consecutive_good_days from (select * from (select route_number, scheduled_departure, max(scheduled_departure)over(partition by route_number rows between 1 preceding and 1 preceding) as prev from ontime_sailings) as T1 where (scheduled_departure-prev)=1 or prev is null) as T1 group by route_number;
+-- Question 2g --
